@@ -6,6 +6,7 @@ from pytest import raises
 
 from pyee import EventEmitter
 
+from .race_event_emitter import RaceEmitter
 
 class PyeeTestException(Exception):
     pass
@@ -183,6 +184,19 @@ def test_once():
     call_me.assert_called_once()
 
     assert ee._events['event'] == OrderedDict()
+
+
+def test_once_remove_race():
+    ee = RaceEventEmitter()
+
+    listener_ran = False
+
+    def listener():
+        nonlocal listener_ran
+
+    ee.once('race', listener)
+    ee.emit('race')
+    assert listener_ran is False
 
 
 def test_once_removal():
