@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from collections import defaultdict, OrderedDict
+from threading import Lock
 
 __all__ = ['EventEmitter', 'PyeeException']
 
@@ -38,6 +39,7 @@ class EventEmitter:
     """
     def __init__(self):
         self._events = defaultdict(OrderedDict)
+        self.lock = Lock()
 
     def on(self, event, f=None):
         """Registers the function ``f`` to the event name ``event``.
@@ -118,7 +120,13 @@ class EventEmitter:
         """
         def _wrapper(f):
             def g(*args, **kwargs):
-                self.remove_listener(event, f)
+                with self.lock:
+                    # Check that the event wasn't removed already right
+                    # before the lock
+                    if event in self._events and f in self._events[event]:
+                        self._remove_listener(event, f)
+                    else:
+                        return None
                 # f may return a coroutine, so we need to return that
                 # result here so that emit can schedule it
                 return f(*args, **kwargs)
@@ -131,18 +139,24 @@ class EventEmitter:
         else:
             return _wrapper(f)
 
+    def _remove_listener(self, event, f):
+        """Naked unprotected removal."""
+        self._events[event].pop(f)
+
     def remove_listener(self, event, f):
         """Removes the function ``f`` from ``event``."""
-        self._events[event].pop(f)
+        with self.lock:
+            self._remove_listener(event, f)
 
     def remove_all_listeners(self, event=None):
         """Remove all listeners attached to ``event``.
         If ``event`` is ``None``, remove all listeners on all events.
         """
-        if event is not None:
-            self._events[event] = OrderedDict()
-        else:
-            self._events = defaultdict(OrderedDict)
+        with self.lock:
+            if event is not None:
+                self._events[event] = OrderedDict()
+            else:
+                self._events = defaultdict(OrderedDict)
 
     def listeners(self, event):
         """Returns a list of all listeners registered to the ``event``.
