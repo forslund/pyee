@@ -39,7 +39,7 @@ class EventEmitter:
     """
     def __init__(self):
         self._events = defaultdict(OrderedDict)
-        self.lock = Lock()
+        self._lock = Lock()
 
     def on(self, event, f=None):
         """Registers the function ``f`` to the event name ``event``.
@@ -74,7 +74,8 @@ class EventEmitter:
         # Note that k and v are the same for `on` handlers, but
         # different for `once` handlers, where v is a wrapped version
         # of k which removes itself before calling k
-        self._events[event][k] = v
+        with self._lock:
+            self._events[event][k] = v
 
     def _emit_run(self, f, args, kwargs):
         f(*args, **kwargs)
@@ -89,7 +90,9 @@ class EventEmitter:
     def _call_handlers(self, event, args, kwargs):
         handled = False
 
-        for f in list(self._events[event].values()):
+        with self._lock:
+            funcs = list(self._events[event].values())
+        for f in funcs:
             self._emit_run(f, args, kwargs)
             handled = True
 
@@ -120,7 +123,7 @@ class EventEmitter:
         """
         def _wrapper(f):
             def g(*args, **kwargs):
-                with self.lock:
+                with self._lock:
                     # Check that the event wasn't removed already right
                     # before the lock
                     if event in self._events and f in self._events[event]:
@@ -145,14 +148,14 @@ class EventEmitter:
 
     def remove_listener(self, event, f):
         """Removes the function ``f`` from ``event``."""
-        with self.lock:
+        with self._lock:
             self._remove_listener(event, f)
 
     def remove_all_listeners(self, event=None):
         """Remove all listeners attached to ``event``.
         If ``event`` is ``None``, remove all listeners on all events.
         """
-        with self.lock:
+        with self._lock:
             if event is not None:
                 self._events[event] = OrderedDict()
             else:
